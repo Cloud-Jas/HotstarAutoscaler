@@ -1,50 +1,55 @@
+using System;
 using System.Collections.Generic;
-using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
-using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Logging;
 
 namespace Hotstar.Autoscaler
 {
-    public static class CommentaryOrchestrator
+public static class CommentaryOrchestration
+{
+    [FunctionName("ProcessCommentaryOrchestration")]
+    public static async Task RunOrchestrator(
+        [OrchestrationTrigger] IDurableOrchestrationContext context,
+        ILogger log)
     {
-        [FunctionName("CommentaryOrchestrator")]
-        public static async Task<List<string>> RunOrchestrator(
-            [OrchestrationTrigger] IDurableOrchestrationContext context)
+        var timer = context.CreateTimer(new DateTime(2023, 8, 29, 16, 0, 0), CancellationToken.None);
+        var commentaryList = GetCommentaryList();
+
+        while (!timer.IsCompleted)
         {
-            var outputs = new List<string>();
-
-            // Replace "hello" with the name of your Durable Activity Function.
-            outputs.Add(await context.CallActivityAsync<string>(nameof(SayHello), "Tokyo"));
-            outputs.Add(await context.CallActivityAsync<string>(nameof(SayHello), "Seattle"));
-            outputs.Add(await context.CallActivityAsync<string>(nameof(SayHello), "London"));
-
-            // returns ["Hello Tokyo!", "Hello Seattle!", "Hello London!"]
-            return outputs;
-        }
-
-        [FunctionName(nameof(SayHello))]
-        public static string SayHello([ActivityTrigger] string name, ILogger log)
-        {
-            log.LogInformation("Saying hello to {name}.", name);
-            return $"Hello {name}!";
-        }
-
-        [FunctionName("CommentaryOrchestrator_HttpStart")]
-        public static async Task<HttpResponseMessage> HttpStart(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequestMessage req,
-            [DurableClient] IDurableOrchestrationClient starter,
-            ILogger log)
-        {
-            // Function input comes from the request content.
-            string instanceId = await starter.StartNewAsync("CommentaryOrchestrator", null);
-
-            log.LogInformation("Started orchestration with ID = '{instanceId}'.", instanceId);
-
-            return starter.CreateCheckStatusResponse(req, instanceId);
+            foreach (string commentary in commentaryList)
+            {
+                await context.CallActivityAsync("PublishToServiceBus", commentary);
+            }
+            
+            if (!context.IsReplaying)
+            {
+                await timer;
+            }
         }
     }
+
+    [FunctionName("PublishToServiceBus")]
+    public static async Task PublishToServiceBus(
+        [ActivityTrigger] string commentary,
+        [ServiceBus("%ServiceBusTopic%", Connection = "ServiceBusConnection")] IAsyncCollector<string> messageQueue,
+        ILogger log)
+    {        
+        await messageQueue.AddAsync(commentary);
+        log.LogInformation($"Published: {commentary}");
+    }
+
+    private static List<string> GetCommentaryList()
+    {
+        return new List<string>
+        {
+            "Commentary 1",
+            "Commentary 2", 
+        };
+    }
+}
+
 }
