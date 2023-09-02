@@ -11,7 +11,7 @@ namespace Hotstar.Autoscaler
     {
         [FunctionName("Commentary_SchedulerJob")]
         public static async Task CommentarySchedulerJob(
-            [TimerTrigger("0 38 01 * * *")] TimerInfo timer,
+            [TimerTrigger("0 57 01 * * *")] TimerInfo timer,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
         {
